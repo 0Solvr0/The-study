@@ -16,7 +16,7 @@
   --line:#392f22;
   --line-soft:#2a2419;
   --wood-dark:#7a5636;
-  --wood-light:#ecdfc0;
+  --wood-light:#cdb98a;
   --ivory:#f3ecdd;
   --ivory-dim:#d9cfb9;
   --muted:#a89a80;
@@ -176,7 +176,7 @@ nav.primary a:hover, nav.primary a.active{color:var(--ivory);}
 .sq{position:relative;display:flex;align-items:center;justify-content:center;user-select:none;}
 .sq.light{background:var(--wood-light);}
 .sq.dark{background:var(--wood-dark);}
-.sq .pc{font-size:calc(var(--sq,44px) * .72);cursor:pointer;transition:transform .08s ease;}
+.sq .pc{position:relative;z-index:1;font-size:calc(var(--sq,44px) * .72);cursor:pointer;transition:transform .08s ease;}
 .sq .pc.white{color:#fbf7ee;filter:drop-shadow(0 1px 1px rgba(0,0,0,.55));}
 .sq .pc.black{color:#1a140c;filter:drop-shadow(0 1px 0 rgba(255,255,255,.12));}
 .sq.selected{box-shadow:inset 0 0 0 3px var(--brass-bright);}
@@ -184,9 +184,7 @@ nav.primary a:hover, nav.primary a.active{color:var(--ivory);}
 .sq .dot{width:14px;height:14px;border-radius:50%;background:rgba(20,15,8,.38);position:absolute;pointer-events:none;}
 .sq .dot.capture{width:calc(100% - 8px);height:calc(100% - 8px);border-radius:50%;background:transparent;box-shadow:inset 0 0 0 4px rgba(192,95,66,.65);}
 .sq.check{box-shadow:inset 0 0 0 4px var(--brick);}
-.sq .coord{position:absolute;font-family:var(--mono);font-size:9px;bottom:1px;left:2px;opacity:.55;pointer-events:none;}
-.sq.light .coord{color:var(--wood-dark);}
-.sq.dark .coord{color:var(--wood-light);}
+.sq .coord{position:absolute;z-index:5;font-family:var(--mono);font-weight:600;font-size:10px;bottom:1px;left:2px;pointer-events:none;color:#0a0805;text-shadow:0 0 2px rgba(255,255,255,.9),0 0 3px rgba(255,255,255,.9);}
 .board-wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;}
 
 /* generic panel / index-card look used across sections */
@@ -1135,31 +1133,38 @@ document.addEventListener('DOMContentLoaded', function () {
 var TACTICS = [
   {
     name: "The Fork", fen: "4r1k1/8/8/3N4/8/8/8/6K1 w - - 0 1", solution: "Nf6+",
-    lesson: "One piece, two targets. A knight is the classic forking piece because it attacks squares no other piece can reach in a straight line — here it attacks the king and the rook at the same time."
+    lesson: "One piece, two targets. A knight is the classic forking piece because it attacks squares no other piece can reach in a straight line — here it attacks the king and the rook at the same time.",
+    why: "The knight jumps to f6, attacking the king on g8 and the rook on e8 at the same time. The king has to move out of check, and then Nxe8 picks up the rook."
   },
   {
     name: "The Pin", fen: "2k5/8/2n5/1Q6/8/8/8/2R3K1 w - - 0 1", solution: "Qxc6+",
-    lesson: "A pinned piece can't move without exposing something more valuable behind it. Here the knight is pinned to its own king by the rook on c1 — it has no legal way to escape or capture back."
+    lesson: "A pinned piece can't move without exposing something more valuable behind it. Here the knight is pinned to its own king by the rook on c1 — it has no legal way to escape or capture back.",
+    why: "The knight on c6 is pinned to the black king on c8 by the rook sitting on c1 — moving it would be illegal, since it would leave the king in check. Because it can't move or capture back, the queen just takes it for free, with check."
   },
   {
     name: "The Skewer", fen: "q7/8/8/k7/8/1K6/8/7R w - - 0 1", solution: "Ra1+",
-    lesson: "A skewer is a pin in reverse: attack the more valuable piece first, and when it moves out of the way, the piece behind it falls. Line the rook up and the queen is lost next."
+    lesson: "A skewer is a pin in reverse: attack the more valuable piece first, and when it moves out of the way, the piece behind it falls. Line the rook up and the queen is lost next.",
+    why: "Sliding the rook down to a1 lines up the king on a5 and the queen on a8 on the same file. The king is the more valuable piece to a check, so it has to step off the file first — then Rxa8 wins the queen."
   },
   {
     name: "Discovered Check", fen: "3k4/8/1r6/3N4/8/8/8/3RK3 w - - 0 1", solution: "Nxb6+",
-    lesson: "Moving one piece can unleash an attack from a completely different one. The knight steps aside, the rook behind it delivers check, and the knight itself grabs a free rook on the way."
+    lesson: "Moving one piece can unleash an attack from a completely different one. The knight steps aside, the rook behind it delivers check, and the knight itself grabs a free rook on the way.",
+    why: "The knight was standing on the d-file, blocking its own rook on d1. Moving it to capture the rook on b6 clears the file, so the rook on d1 suddenly gives check to the king on d8 — a free rook and a check in the same move."
   },
   {
     name: "Double Attack", fen: "1b2r1k1/8/8/8/8/8/7Q/6K1 w - - 0 1", solution: "Qe5",
-    lesson: "The queen's power is range in every direction at once. One central square can attack a file and a diagonal simultaneously — find the square that hits two undefended pieces at once."
+    lesson: "The queen's power is range in every direction at once. One central square can attack a file and a diagonal simultaneously — find the square that hits two undefended pieces at once.",
+    why: "From e5, the queen attacks the rook on e8 straight down the e-file and the bishop on b8 down the a1-h8 diagonal at the same moment. Neither piece is defended, and Black can only save one of them."
   },
   {
     name: "Back Rank Mate", fen: "6k1/5ppp/8/8/8/8/8/1K1R4 w - - 0 1", solution: "Rd8#",
-    lesson: "A king castled behind its own unmoved pawns can be trapped on the back rank with nowhere to run. Always ask: if my opponent gets a rook or queen to my first rank, do I have an escape square?"
+    lesson: "A king castled behind its own unmoved pawns can be trapped on the back rank with nowhere to run. Always ask: if my opponent gets a rook or queen to my first rank, do I have an escape square?",
+    why: "The rook slides all the way down to d8, checking the king along the back rank. The king can't step forward because its own pawns on f7, g7 and h7 wall it in, and nothing can block the check or capture the rook — that's checkmate."
   },
   {
     name: "Overloaded Defender", fen: "3r2k1/5ppp/8/3n4/8/1B6/8/1K2R3 w - - 0 1", solution: "Bxd5",
-    lesson: "The rook on d8 is doing two jobs — guarding the back rank and defending the knight — and it can't do both. Take the knight: if the rook recaptures, the back rank is undefended for the mate that follows."
+    lesson: "The rook on d8 is doing two jobs — guarding the back rank and defending the knight — and it can't do both. Take the knight: if the rook recaptures, the back rank is undefended for the mate that follows.",
+    why: "The rook on d8 has two jobs at once: defending the knight on d5, and guarding the back rank. Taking the knight calls its bluff — if the rook recaptures on d5 to win the bishop back, the back rank is left empty and White's other rook marches in to deliver mate on the next move."
   }
 ];
 
@@ -1188,7 +1193,7 @@ function renderTactics() {
         if (solved) return;
         var fb = document.getElementById('tac-fb-' + idx);
         if (res.san.replace('+','').replace('#','') === t.solution.replace('+','').replace('#','')) {
-          fb.textContent = 'Correct — ' + t.solution + ' is the shot.';
+          fb.innerHTML = '<b>Correct — ' + t.solution + '.</b> ' + t.why;
           fb.className = 'tac-feedback correct';
           solved = true;
         } else {
@@ -1204,7 +1209,7 @@ function renderTactics() {
       document.getElementById('tac-fb-' + idx).className = 'tac-feedback';
     });
     card.querySelector('[data-act="reveal"]').addEventListener('click', function () {
-      document.getElementById('tac-fb-' + idx).textContent = 'Solution: ' + t.solution;
+      document.getElementById('tac-fb-' + idx).innerHTML = '<b>Solution: ' + t.solution + '</b> — ' + t.why;
       document.getElementById('tac-fb-' + idx).className = 'tac-feedback';
     });
     card.querySelector('[data-act="reset"]').addEventListener('click', function () {
