@@ -443,20 +443,33 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
     <div class="coach-panel" id="panel-analyze" style="display:none;">
       <div class="coach-layout">
         <div>
-          <div id="analyze-board"></div>
-          <div class="coach-controls">
-            <button class="btn btn-outline btn-small" data-act="first">⏮ Start</button>
-            <button class="btn btn-outline btn-small" data-act="prev">&larr; Back</button>
-            <button class="btn btn-brass btn-small" data-act="review" id="analyze-review-btn">Review next move &rarr;</button>
-            <label class="mono" style="font-size:12px;color:var(--muted);">SPEED
-              <select id="analyze-depth">
-                <option value="2" selected>Fast</option>
-                <option value="3">Thorough (slower)</option>
-              </select>
-            </label>
+          <div id="analyze-normal-view">
+            <div id="analyze-board"></div>
+            <div class="coach-controls">
+              <button class="btn btn-outline btn-small" data-act="first">⏮ Start</button>
+              <button class="btn btn-outline btn-small" data-act="prev">&larr; Back</button>
+              <button class="btn btn-brass btn-small" data-act="review" id="analyze-review-btn">Review next move &rarr;</button>
+              <label class="mono" style="font-size:12px;color:var(--muted);">SPEED
+                <select id="analyze-depth">
+                  <option value="2" selected>Fast</option>
+                  <option value="3">Thorough (slower)</option>
+                </select>
+              </label>
+            </div>
+            <div class="coach-controls" style="margin-top:6px;">
+              <button class="btn btn-outline btn-small" id="analyze-play">Play on from here (free play)</button>
+            </div>
           </div>
-          <div class="coach-controls" style="margin-top:6px;">
-            <button class="btn btn-outline btn-small" id="analyze-play">Play on from here (free play)</button>
+          <div id="analyze-trainer-view" style="display:none;">
+            <div id="trainer-board"></div>
+            <div class="trainer-prompt" id="trainer-prompt"></div>
+            <div class="trainer-feedback" id="trainer-feedback"></div>
+            <div class="coach-controls" style="margin-top:10px;">
+              <button class="btn btn-outline btn-small" id="trainer-hint">Hint</button>
+              <button class="btn btn-outline btn-small" id="trainer-reveal">View the solution</button>
+              <button class="btn btn-outline btn-small" id="trainer-skip">Skip this move</button>
+              <button class="btn btn-outline btn-small" id="trainer-close">Back to review</button>
+            </div>
           </div>
         </div>
         <div class="coach-side">
@@ -468,6 +481,7 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
               <p class="dim" id="analyze-err" style="color:var(--brick-bright);"></p>
             </div>
           </details>
+          <div id="analyze-summary"></div>
           <h4>Position</h4>
           <div class="coach-notes" id="analyze-report" style="max-height:none;"><p class="dim">Load a game to see the starting position here.</p></div>
           <h4>Move-by-move review</h4>
@@ -513,6 +527,28 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
 .load-details summary:hover{color:var(--ivory);}
 .load-details-body{padding:0 14px 14px;}
 .coach-side h4:not(:first-of-type){margin-top:22px;}
+
+/* game summary cards */
+.gs-card{background:var(--panel);border:1px solid var(--line);padding:14px 16px;margin-bottom:10px;}
+.gs-head{display:flex;align-items:baseline;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.gs-head b{font-family:var(--serif);font-size:15px;color:var(--ivory);}
+.gs-head .gs-acc{margin-left:auto;font-family:var(--mono);font-size:13px;color:var(--brass-bright);}
+.gs-stats{display:flex;gap:16px;flex-wrap:wrap;font-size:13px;margin-bottom:8px;}
+.gs-stats span b{display:block;font-family:var(--serif);font-size:16px;}
+.gs-stats .gs-inacc b{color:var(--brass);}
+.gs-stats .gs-mist b{color:var(--brick);}
+.gs-stats .gs-blun b{color:var(--brick-bright);}
+.gs-phases{display:flex;gap:14px;font-size:12px;color:var(--muted-dim);font-family:var(--mono);}
+.gs-learn-btn{width:100%;margin:6px 0 14px;justify-content:center;font-weight:700;padding:14px;}
+.gs-empty{font-size:13px;color:var(--muted-dim);}
+
+/* mistake trainer */
+.trainer-prompt{margin-top:14px;font-size:15px;color:var(--ivory);}
+.trainer-prompt b{color:var(--brass-bright);}
+.trainer-feedback{margin-top:8px;font-size:14px;min-height:20px;font-weight:600;}
+.trainer-feedback.correct{color:var(--sage-bright);}
+.trainer-feedback.wrong{color:var(--brick-bright);}
+.trainer-progress{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:4px;}
 .coach-controls{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap;}
 .btn:disabled{opacity:.4;cursor:default;}
 .btn:disabled:hover{transform:none;}
@@ -1339,6 +1375,32 @@ function evaluate(chess) {
   }
   return score;
 }
+/** Rough game phase from material still on the board (kings/pawns
+ *  excluded) — used only to bucket "opening / middlegame / endgame"
+ *  accuracy in the game summary, the same way most engines taper eval. */
+function gamePhase(fen) {
+  var chess = new Chess(fen);
+  var board = chess.board();
+  var total = 0;
+  for (var r = 0; r < 8; r++) for (var f = 0; f < 8; f++) { var p = board[r][f]; if (p && p.type !== 'p' && p.type !== 'k') total += PIECE_VAL[p.type]; }
+  if (total >= 5600) return 'opening';
+  if (total <= 2200) return 'endgame';
+  return 'middlegame';
+}
+/** Convert a signed (White-perspective) centipawn score into White's
+ *  win percentage, using the same logistic curve Lichess popularized —
+ *  then turn a *drop* in win% into a 0-100 "accuracy" for that one move.
+ *  Framed this way, losing 200cp when already winning big barely dents
+ *  accuracy, while the same 200cp in a level position costs a lot —
+ *  which matches how much a move actually mattered. */
+function winPercentFromCp(cp) {
+  var v = 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
+  return Math.max(0, Math.min(100, v));
+}
+function moveAccuracyFromWinLoss(winPctLoss) {
+  var a = 103.1668 * Math.exp(-0.04354 * Math.max(0, winPctLoss)) - 3.1669;
+  return Math.max(0, Math.min(100, a));
+}
 /* Rank moves by a cheap 1-ply static eval first (one move-generation
    call, no recursion) — used to shortlist candidates before spending
    real search time on them. This is the main speed lever: chess.js's
@@ -1490,6 +1552,9 @@ function buildReviewEntry(fen, actualSan, depth) {
   }
   var isBest = !!actualEntry && actualEntry.san === bestEntry.san;
   var verdict = classifyLoss(lossCp, isBest);
+  var bestWin = maximizing ? winPercentFromCp(bestEntry.score) : (100 - winPercentFromCp(bestEntry.score));
+  var actualWin = actualEntry ? (maximizing ? winPercentFromCp(actualEntry.score) : (100 - winPercentFromCp(actualEntry.score))) : bestWin;
+  var accuracy = moveAccuracyFromWinLoss(bestWin - actualWin);
   var bestPlain = plainMove(bestEntry.move);
   var actualPlain = actualEntry ? plainMove(actualEntry.move) : actualSan;
   var comment;
@@ -1511,7 +1576,8 @@ function buildReviewEntry(fen, actualSan, depth) {
       } catch (e) { /* best-effort only */ }
     }
   }
-  return { sanPlayed: actualSan, plainPlayed: actualPlain, bestSan: bestEntry.san, bestPlain: bestPlain, lossCp: lossCp, verdict: verdict, comment: comment };
+  return { sanPlayed: actualSan, plainPlayed: actualPlain, bestSan: bestEntry.san, bestPlain: bestPlain,
+    bestMove: bestEntry.move, lossCp: lossCp, verdict: verdict, comment: comment, accuracy: accuracy };
 }
 
 
@@ -1622,6 +1688,8 @@ var analyzeFromStart = false;
 var analyzeFree = false;
 var analyzeReview = null;    // filled in by buildReview(); one entry per ply
 var analyzeReviewToken = 0;  // guards against a stale async build finishing late
+var analyzeGameSummary = null; // per-side accuracy/phase stats, computed once the review is built
+var analyzeHeaders = {};     // PGN tag pairs (White/Black names etc.) when available
 
 function initAnalyzeBoard() {
   analyzeBoard = new ChessBoard(document.getElementById('analyze-board'), analyzeChess, {
@@ -1683,6 +1751,182 @@ function buildSummaryHtml() {
     counts.blunder + ' blunder' + (counts.blunder === 1 ? '' : 's') + '.</p>';
 }
 
+/* ---- richer per-side game summary: accuracy, phase breakdown, and the
+   "Learn from your mistakes" entry point — modeled on the summary screen
+   chess.com and Lichess show after a game review. ---- */
+function computeGameSummary() {
+  if (!analyzeReview || !analyzeReview.length) return null;
+  function blankSide() { return { n: 0, sumAcc: 0, sumCpl: 0, inaccuracies: 0, mistakes: 0, blunders: 0, phase: { opening: { n: 0, sumAcc: 0 }, middlegame: { n: 0, sumAcc: 0 }, endgame: { n: 0, sumAcc: 0 } } }; }
+  var s = { w: blankSide(), b: blankSide() };
+  analyzeReview.forEach(function (e, i) {
+    var t = s[i % 2 === 0 ? 'w' : 'b'];
+    t.n++; t.sumAcc += e.accuracy; t.sumCpl += e.lossCp;
+    if (e.verdict === 'inaccuracy') t.inaccuracies++;
+    if (e.verdict === 'mistake') t.mistakes++;
+    if (e.verdict === 'blunder') t.blunders++;
+    var ph = t.phase[e.phase];
+    if (ph) { ph.n++; ph.sumAcc += e.accuracy; }
+  });
+  function finish(t) {
+    return {
+      accuracy: t.n ? (t.sumAcc / t.n) : 100,
+      acpl: t.n ? (t.sumCpl / t.n) : 0,
+      inaccuracies: t.inaccuracies, mistakes: t.mistakes, blunders: t.blunders,
+      phase: {
+        opening: t.phase.opening.n ? (t.phase.opening.sumAcc / t.phase.opening.n) : null,
+        middlegame: t.phase.middlegame.n ? (t.phase.middlegame.sumAcc / t.phase.middlegame.n) : null,
+        endgame: t.phase.endgame.n ? (t.phase.endgame.sumAcc / t.phase.endgame.n) : null
+      }
+    };
+  }
+  return { white: finish(s.w), black: finish(s.b) };
+}
+function fmtPct(n) { return n === null ? '—' : Math.round(n) + '%'; }
+function gsCardHtml(name, side, color) {
+  return '<div class="gs-card">' +
+    '<div class="gs-head"><span class="gs-dot" style="width:9px;height:9px;border-radius:50%;display:inline-block;background:' + color + ';"></span><b>' + name + '</b><span class="gs-acc">' + Math.round(side.accuracy) + '% Accuracy</span></div>' +
+    '<div class="gs-stats">' +
+      '<span class="gs-inacc"><b>' + side.inaccuracies + '</b>Inaccuracies</span>' +
+      '<span class="gs-mist"><b>' + side.mistakes + '</b>Mistake' + (side.mistakes === 1 ? '' : 's') + '</span>' +
+      '<span class="gs-blun"><b>' + side.blunders + '</b>Blunder' + (side.blunders === 1 ? '' : 's') + '</span>' +
+      '<span><b>' + Math.round(side.acpl) + '</b>Avg. cp loss</span>' +
+    '</div>' +
+    '<div class="gs-phases"><span>Opening ' + fmtPct(side.phase.opening) + '</span><span>Middlegame ' + fmtPct(side.phase.middlegame) + '</span><span>Endgame ' + fmtPct(side.phase.endgame) + '</span></div>' +
+  '</div>';
+}
+function renderGameSummary() {
+  var el = document.getElementById('analyze-summary');
+  if (!analyzeGameSummary) { el.innerHTML = ''; return; }
+  var whiteName = analyzeHeaders.White || 'White';
+  var blackName = analyzeHeaders.Black || 'Black';
+  var totalMistakesOrWorse = analyzeReview.filter(function (e) { return e.verdict === 'mistake' || e.verdict === 'blunder'; }).length;
+  var html = gsCardHtml(whiteName, analyzeGameSummary.white, '#f3ecdd') + gsCardHtml(blackName, analyzeGameSummary.black, '#3a3226');
+  if (totalMistakesOrWorse > 0) {
+    html += '<button class="btn btn-brass gs-learn-btn" id="learn-mistakes-btn">▶ Learn from your mistakes (' + totalMistakesOrWorse + ')</button>';
+  } else {
+    html += '<p class="gs-empty">No mistakes or blunders in this game — nothing to drill.</p>';
+  }
+  el.innerHTML = html;
+  var btn = document.getElementById('learn-mistakes-btn');
+  if (btn) btn.addEventListener('click', openTrainer);
+}
+
+/* ---- "Learn from your mistakes": a mini puzzle trainer built from the
+   game's own mistakes and blunders, in the order they happened. ---- */
+var trainerQueue = [];
+var trainerIdx = 0;
+var trainerChess = null;
+var trainerBoard = null;
+var trainerSolved = false;
+function buildTrainerQueue() {
+  trainerQueue = [];
+  analyzeReview.forEach(function (e, i) {
+    if (e.verdict === 'mistake' || e.verdict === 'blunder') trainerQueue.push(i);
+  });
+}
+function openTrainer() {
+  buildTrainerQueue();
+  if (!trainerQueue.length) return;
+  document.getElementById('analyze-normal-view').style.display = 'none';
+  document.getElementById('analyze-trainer-view').style.display = '';
+  trainerIdx = 0;
+  loadTrainerItem();
+}
+function closeTrainer() {
+  document.getElementById('analyze-trainer-view').style.display = 'none';
+  document.getElementById('analyze-normal-view').style.display = '';
+}
+function loadTrainerItem() {
+  trainerSolved = false;
+  var reviewIdx = trainerQueue[trainerIdx];
+  var e = analyzeReview[reviewIdx];
+  var mover = reviewIdx % 2 === 0 ? 'White' : 'Black';
+  if (!trainerChess) trainerChess = new Chess();
+  trainerChess.load(e.fenBefore);
+  if (!trainerBoard) {
+    trainerBoard = new ChessBoard(document.getElementById('trainer-board'), trainerChess, {
+      size: 46, interactive: true, restrictSide: reviewIdx % 2 === 0 ? 'w' : 'b',
+      onMove: handleTrainerMove
+    });
+  } else {
+    trainerBoard.restrictSide = reviewIdx % 2 === 0 ? 'w' : 'b';
+    trainerBoard.setPosition(e.fenBefore, null);
+  }
+  document.getElementById('trainer-prompt').innerHTML =
+    '<span class="trainer-progress">Mistake ' + (trainerIdx + 1) + ' / ' + trainerQueue.length + '</span><br>' +
+    plyLabel(reviewIdx) + ' <b>' + e.plainPlayed + ' (' + e.sanPlayed + ')</b> was played — find a better move for ' + mover + '.';
+  document.getElementById('trainer-feedback').textContent = '';
+  document.getElementById('trainer-feedback').className = 'trainer-feedback';
+}
+function handleTrainerMove(mv) {
+  if (trainerSolved) return;
+  var reviewIdx = trainerQueue[trainerIdx];
+  var e = analyzeReview[reviewIdx];
+  var fb = document.getElementById('trainer-feedback');
+  // lenient check: exact best move, or anything within ~20cp of it
+  var norm = mv.san.replace(/[+#]/g, '');
+  var bestNorm = e.bestSan.replace(/[+#]/g, '');
+  var isGoodEnough = norm === bestNorm;
+  if (!isGoodEnough) {
+    var scratch = new Chess(e.fenBefore);
+    var maximizing = scratch.turn() === 'w';
+    var tryAll = evaluateAllMoves(e.fenBefore, 2, mv.san);
+    var tried = tryAll.filter(function (x) { return x.san.replace(/[+#]/g, '') === norm; })[0];
+    var best = tryAll[0];
+    if (tried && best) {
+      var diff = maximizing ? (best.score - tried.score) : (tried.score - best.score);
+      if (diff <= 20) isGoodEnough = true;
+    }
+  }
+  if (isGoodEnough) {
+    trainerSolved = true;
+    fb.textContent = 'Correct — ' + plainMove(mv) + ' (' + mv.san + ') was the fix.';
+    fb.className = 'trainer-feedback correct';
+    setTimeout(nextTrainerItem, 1100);
+  } else {
+    fb.textContent = plainMove(mv) + ' (' + mv.san + ') doesn\'t fix it — try again, or view the solution.';
+    fb.className = 'trainer-feedback wrong';
+    trainerChess.load(e.fenBefore);
+    trainerBoard.setPosition(e.fenBefore, null);
+  }
+}
+function nextTrainerItem() {
+  if (trainerIdx < trainerQueue.length - 1) {
+    trainerIdx++;
+    loadTrainerItem();
+  } else {
+    document.getElementById('trainer-prompt').innerHTML = '<b>Done!</b> You\'ve been through every mistake and blunder in this game.';
+    document.getElementById('trainer-feedback').textContent = '';
+  }
+}
+document.addEventListener('DOMContentLoaded', function () {
+  document.getElementById('trainer-reveal').addEventListener('click', function () {
+    var reviewIdx = trainerQueue[trainerIdx];
+    var e = analyzeReview[reviewIdx];
+    trainerChess.load(e.fenBefore);
+    var res = trainerChess.move(e.bestSan, { sloppy: true });
+    trainerBoard.setPosition(trainerChess.fen(), res ? { from: res.from, to: res.to } : null);
+    trainerSolved = true;
+    document.getElementById('trainer-feedback').innerHTML = '<b>Solution: ' + e.bestPlain + ' (' + e.bestSan + ').</b> ' + e.comment;
+    document.getElementById('trainer-feedback').className = 'trainer-feedback';
+  });
+  document.getElementById('trainer-hint').addEventListener('click', function () {
+    var reviewIdx = trainerQueue[trainerIdx];
+    var e = analyzeReview[reviewIdx];
+    var fb = document.getElementById('trainer-feedback');
+    if (e.bestMove && (e.bestMove.flags.indexOf('k') !== -1 || e.bestMove.flags.indexOf('q') !== -1)) {
+      fb.textContent = 'Hint: the king has a safe move available right now.';
+    } else if (e.bestMove) {
+      fb.textContent = 'Look at the ' + (PIECE_NAME[e.bestMove.piece] || 'piece') + ' that can reach ' + e.bestMove.to + '.';
+    } else {
+      fb.textContent = 'Look for ' + e.bestPlain + '.';
+    }
+    fb.className = 'trainer-feedback';
+  });
+  document.getElementById('trainer-skip').addEventListener('click', nextTrainerItem);
+  document.getElementById('trainer-close').addEventListener('click', closeTrainer);
+});
+
 /* ---- the "Move-by-move review" log: a running transcript up to the
    current ply, rebuilt from the precomputed array every time you move
    through the game — so it's always correct regardless of direction. */
@@ -1726,6 +1970,7 @@ function analyzeGoTo(n) {
   var lm = n > 0 ? analyzeChess.history({ verbose: true }).slice(-1)[0] : null;
   analyzeBoard.setPosition(analyzeChess.fen(), lm ? { from: lm.from, to: lm.to } : null);
   renderAnalyzeReport();
+  renderGameSummary();
   renderReviewLog();
 
   var reviewBtn = document.getElementById('analyze-review-btn');
@@ -1753,6 +1998,7 @@ function analyzeGoTo(n) {
 function buildReview(sanList, depth) {
   var token = ++analyzeReviewToken;
   analyzeReview = [];
+  analyzeGameSummary = null;
   var log = document.getElementById('analyze-review-log');
   var scratch = new Chess();
   var i = 0, total = sanList.length;
@@ -1766,20 +2012,27 @@ function buildReview(sanList, depth) {
     if (token !== analyzeReviewToken) return; // a newer game was loaded meanwhile
     var t0 = Date.now();
     while (i < total && Date.now() - t0 < 30) {
+      var fenBefore = scratch.fen();
+      var phase = gamePhase(fenBefore);
+      var entry;
       if (i < bookPlies) {
         var bookRes = scratch.move(sanList[i], { sloppy: true });
         var bookPlain = plainMove(bookRes);
-        analyzeReview.push({ sanPlayed: sanList[i], plainPlayed: bookPlain, bestSan: sanList[i], bestPlain: bookPlain, lossCp: 0, verdict: 'book', comment: 'Known theory — ' + openingMatch.opening.name + '.' });
+        entry = { sanPlayed: sanList[i], plainPlayed: bookPlain, bestSan: sanList[i], bestPlain: bookPlain, bestMove: bookRes, lossCp: 0, verdict: 'book', comment: 'Known theory — ' + openingMatch.opening.name + '.', accuracy: 100 };
       } else {
-        analyzeReview.push(buildReviewEntry(scratch.fen(), sanList[i], depth));
+        entry = buildReviewEntry(fenBefore, sanList[i], depth);
         scratch.move(sanList[i], { sloppy: true });
       }
+      entry.phase = phase;
+      entry.fenBefore = fenBefore;
+      analyzeReview.push(entry);
       i++;
     }
     log.innerHTML = '<p class="dim">Analyzing your game… ' + i + ' / ' + total + ' moves.</p>';
     if (i < total) {
       setTimeout(step, 0);
     } else {
+      analyzeGameSummary = computeGameSummary();
       analyzeGoTo(0);
     }
   }
@@ -1799,6 +2052,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var err = document.getElementById('analyze-err');
     err.textContent = '';
     if (!raw) return;
+    closeTrainer();
     var looksLikeFen = /^[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\s+[wb]\s/.test(raw);
     var fresh = new Chess();
     analyzeReviewToken++; // cancel any build still in flight
@@ -1806,16 +2060,19 @@ document.addEventListener('DOMContentLoaded', function () {
       var ok = fresh.load(raw);
       if (!ok) { err.textContent = 'That FEN doesn\'t look valid — double check it and try again.'; return; }
       analyzeLine = []; analyzePly = 0; analyzeFromStart = false; analyzeReview = null;
+      analyzeGameSummary = null; analyzeHeaders = {};
       analyzeChess.load(raw);
       analyzeBoard.setPosition(analyzeChess.fen(), null);
       renderAnalyzeReport();
       renderReviewLog();
+      renderGameSummary();
       collapseLoadBox('Load a different position');
     } else {
       var ok2 = fresh.load_pgn(raw, { sloppy: true });
       if (!ok2 || fresh.history().length === 0) { err.textContent = 'Couldn\'t read that as a FEN or a PGN — paste a full FEN string, or PGN move text like "1.e4 e5 2.Nf3 …".'; return; }
       analyzeLine = fresh.history();
       analyzeFromStart = true;
+      analyzeHeaders = (typeof fresh.header === 'function') ? (fresh.header() || {}) : {};
       var depth = parseInt(document.getElementById('analyze-depth').value, 10);
       buildReview(analyzeLine, depth);
       collapseLoadBox('Load a different game');
