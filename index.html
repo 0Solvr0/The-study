@@ -459,10 +459,14 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
           </div>
         </div>
         <div class="coach-side">
-          <h4>Load a game</h4>
-          <textarea id="analyze-input" rows="3" placeholder="Paste a FEN or a full PGN here…"></textarea>
-          <button class="btn btn-brass btn-small" id="analyze-load" style="margin-top:8px;">Load, starting from move 1</button>
-          <p class="dim" id="analyze-err" style="color:var(--brick-bright);"></p>
+          <details id="analyze-load-wrap" class="load-details" open>
+            <summary id="analyze-load-summary">Load a game</summary>
+            <div class="load-details-body">
+              <textarea id="analyze-input" rows="3" placeholder="Paste a FEN or a full PGN here…"></textarea>
+              <button class="btn btn-brass btn-small" id="analyze-load" style="margin-top:8px;">Load, starting from move 1</button>
+              <p class="dim" id="analyze-err" style="color:var(--brick-bright);"></p>
+            </div>
+          </details>
           <h4>Position</h4>
           <div class="coach-notes" id="analyze-report" style="max-height:none;"><p class="dim">Load a game to see the starting position here.</p></div>
           <h4>Move-by-move review</h4>
@@ -497,7 +501,17 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
 .coach-layout{display:grid;grid-template-columns:auto 1fr;gap:32px;align-items:start;}
 .coach-side{max-width:380px;}
 .coach-side h4{font-size:13px;color:var(--brass-bright);margin:0 0 8px;}
-.coach-side h4:not(:first-child){margin-top:22px;}
+.load-details{background:var(--panel);border:1px solid var(--line);margin-bottom:22px;}
+.load-details summary{
+  list-style:none;cursor:pointer;padding:12px 14px;font-family:var(--sans);font-weight:600;font-size:13px;
+  color:var(--brass-bright);display:flex;justify-content:space-between;align-items:center;
+}
+.load-details summary::-webkit-details-marker{display:none;}
+.load-details summary::after{content:"▾";color:var(--muted);font-weight:400;transition:transform .15s ease;}
+.load-details[open] summary::after{transform:rotate(180deg);}
+.load-details summary:hover{color:var(--ivory);}
+.load-details-body{padding:0 14px 14px;}
+.coach-side h4:not(:first-of-type){margin-top:22px;}
 .coach-controls{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap;}
 .btn:disabled{opacity:.4;cursor:default;}
 .btn:disabled:hover{transform:none;}
@@ -1744,6 +1758,12 @@ function buildReview(sanList, depth) {
   step();
 }
 
+function collapseLoadBox(summaryText) {
+  var wrap = document.getElementById('analyze-load-wrap');
+  var summary = document.getElementById('analyze-load-summary');
+  if (wrap) wrap.open = false;
+  if (summary) summary.textContent = summaryText || 'Load a different game';
+}
 document.addEventListener('DOMContentLoaded', function () {
   initAnalyzeBoard();
   document.getElementById('analyze-load').addEventListener('click', function () {
@@ -1762,6 +1782,7 @@ document.addEventListener('DOMContentLoaded', function () {
       analyzeBoard.setPosition(analyzeChess.fen(), null);
       renderAnalyzeReport();
       renderReviewLog();
+      collapseLoadBox('Load a different position');
     } else {
       var ok2 = fresh.load_pgn(raw, { sloppy: true });
       if (!ok2 || fresh.history().length === 0) { err.textContent = 'Couldn\'t read that as a FEN or a PGN — paste a full FEN string, or PGN move text like "1.e4 e5 2.Nf3 …".'; return; }
@@ -1769,6 +1790,7 @@ document.addEventListener('DOMContentLoaded', function () {
       analyzeFromStart = true;
       var depth = parseInt(document.getElementById('analyze-depth').value, 10);
       buildReview(analyzeLine, depth);
+      collapseLoadBox('Load a different game');
     }
   });
   document.querySelectorAll('#panel-analyze [data-act]').forEach(function (btn) {
