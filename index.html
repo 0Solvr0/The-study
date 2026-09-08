@@ -185,6 +185,7 @@ nav.primary a:hover, nav.primary a.active{color:var(--ivory);}
 .sq .dot.capture{width:calc(100% - 8px);height:calc(100% - 8px);border-radius:50%;background:transparent;box-shadow:inset 0 0 0 4px rgba(192,95,66,.65);}
 .sq.check{box-shadow:inset 0 0 0 4px var(--brick);}
 .sq .coord{position:absolute;z-index:5;font-family:var(--mono);font-weight:600;font-size:10px;bottom:1px;left:2px;pointer-events:none;color:#0a0805;text-shadow:0 0 2px rgba(255,255,255,.9),0 0 3px rgba(255,255,255,.9);}
+.sq .coord-file{left:auto;right:2px;}
 .board-wrap{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start;}
 
 /* generic panel / index-card look used across sections */
@@ -528,7 +529,8 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
 .rev-entry.tag-inaccuracy{border-color:var(--brass);}
 .rev-entry.tag-mistake{border-color:var(--brick);}
 .rev-entry.tag-blunder{border-color:var(--brick-bright);}
-.rev-entry .rev-move{font-family:var(--mono);font-weight:600;color:var(--ivory);}
+.rev-entry .rev-move{font-family:var(--sans);font-weight:600;color:var(--ivory);}
+.rev-entry .rev-san{font-family:var(--mono);font-weight:400;color:var(--muted-dim);font-size:12px;}
 .rev-entry .rev-label{font-size:11px;text-transform:none;color:var(--muted-dim);margin-left:6px;}
 #analyze-input{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--ivory);font-family:var(--mono);font-size:12.5px;padding:10px;resize:vertical;}
 .import-intro p{max-width:70ch;font-size:14px;}
@@ -662,6 +664,9 @@ ChessBoard.prototype.render = function () {
     }
     if (self.showCoords && file === (self.orientation === 'black' ? 'h' : 'a')) {
       var c = document.createElement('span'); c.className = 'coord'; c.textContent = rank; el.appendChild(c);
+    }
+    if (self.showCoords && rank === (self.orientation === 'black' ? '8' : '1')) {
+      var cf = document.createElement('span'); cf.className = 'coord coord-file'; cf.textContent = file; el.appendChild(cf);
     }
     if (self.interactive) {
       el.style.cursor = 'pointer';
@@ -1405,6 +1410,21 @@ function alphabeta(chess, depth, alpha, beta, maximizing) {
     return worst;
   }
 }
+var PIECE_NAME = { p: 'Pawn', n: 'Knight', b: 'Bishop', r: 'Rook', q: 'Queen', k: 'King' };
+/** Turn a chess.js verbose move object into plain English, e.g.
+ *  "Knight to f6", "Pawn captures on d5", "Castles kingside". This is
+ *  for the coach's own commentary — algebraic notation (Nf6) is kept
+ *  alongside it everywhere, so the site still teaches notation too. */
+function plainMove(m) {
+  if (!m) return '';
+  if (m.flags.indexOf('k') !== -1) return 'Castles kingside';
+  if (m.flags.indexOf('q') !== -1) return 'Castles queenside';
+  var name = PIECE_NAME[m.piece] || 'Piece';
+  var isCapture = m.flags.indexOf('c') !== -1 || m.flags.indexOf('e') !== -1;
+  var text = name + ' ' + (isCapture ? 'captures on ' : 'to ') + m.to;
+  if (m.promotion) text += ', promoting to ' + PIECE_NAME[m.promotion];
+  return text;
+}
 function describeMove(chess, moveResult) {
   // chess has ALREADY made the move; moveResult is the verbose move object
   var tags = [];
@@ -1470,26 +1490,28 @@ function buildReviewEntry(fen, actualSan, depth) {
   }
   var isBest = !!actualEntry && actualEntry.san === bestEntry.san;
   var verdict = classifyLoss(lossCp, isBest);
+  var bestPlain = plainMove(bestEntry.move);
+  var actualPlain = actualEntry ? plainMove(actualEntry.move) : actualSan;
   var comment;
   if (isBest) {
     comment = 'That\'s the coach\'s top choice in this position.';
   } else if (verdict === 'good') {
-    comment = 'Close to the top choice, ' + bestEntry.san + ' — only a small difference.';
+    comment = 'Close to the top choice, ' + bestPlain + ' (' + bestEntry.san + ') — only a small difference.';
   } else {
     var pawns = (lossCp / 100).toFixed(1).replace(/\.0$/, '');
-    comment = 'The coach\'s pick was ' + bestEntry.san + ', which ' + bestEntry.desc + ' and comes out about ' + pawns + ' pawn(s) ahead of ' + actualSan + '.';
+    comment = 'The coach would have played ' + bestPlain + ' (' + bestEntry.san + ') instead — it ' + bestEntry.desc + ' and comes out about ' + pawns + ' pawn(s) ahead of ' + actualPlain + ' (' + actualSan + ').';
     if (verdict === 'mistake' || verdict === 'blunder') {
       try {
         var scratch = new Chess(fen);
         scratch.move(actualSan, { sloppy: true });
         if (!scratch.game_over()) {
           var reply = evaluateAllMoves(scratch.fen(), 1)[0];
-          if (reply) comment += ' The critical follow-up is ' + reply.san + '.';
+          if (reply) comment += ' The critical follow-up is ' + plainMove(reply.move) + ' (' + reply.san + ').';
         }
       } catch (e) { /* best-effort only */ }
     }
   }
-  return { sanPlayed: actualSan, bestSan: bestEntry.san, lossCp: lossCp, verdict: verdict, comment: comment };
+  return { sanPlayed: actualSan, plainPlayed: actualPlain, bestSan: bestEntry.san, bestPlain: bestPlain, lossCp: lossCp, verdict: verdict, comment: comment };
 }
 
 
@@ -1539,7 +1561,7 @@ function engineReplyIfNeeded() {
     var mv = practiceChess.move(res.move);
     practiceBoard.setPosition(practiceChess.fen(), { from: mv.from, to: mv.to });
     renderPracticeMovelist();
-    addNote('Coach plays ' + mv.san + ' — ' + describeMove(practiceChess, mv) + '.');
+    addNote('Coach plays ' + plainMove(mv) + ' (' + mv.san + ') — ' + describeMove(practiceChess, mv) + '.');
     checkPracticeOver();
   }, 320);
 }
@@ -1559,7 +1581,7 @@ function initPracticeBoard() {
       if (practiceOver) return;
       renderPracticeMovelist();
       var warn = blunderCheck(practiceChess);
-      addNote('You play ' + mv.san + ' — ' + describeMove(practiceChess, mv) + '.', 'tag-good');
+      addNote('You play ' + plainMove(mv) + ' (' + mv.san + ') — ' + describeMove(practiceChess, mv) + '.', 'tag-good');
       if (warn) addNote(warn, 'tag-warn');
       checkPracticeOver();
       engineReplyIfNeeded();
@@ -1636,17 +1658,18 @@ function renderAnalyzeReport() {
   if (analyzeFree) {
     if (!analyzeChess.game_over()) {
       var live = searchBest(new Chess(analyzeChess.fen()), 2);
-      if (live.move) { var c2 = new Chess(analyzeChess.fen()); var mv2 = c2.move(live.move); html += '<p><b>Coach suggests: ' + live.move.san + '</b> — ' + describeMove(c2, mv2) + '.</p>'; }
+      if (live.move) { var c2 = new Chess(analyzeChess.fen()); var mv2 = c2.move(live.move); html += '<p><b>Coach suggests: ' + plainMove(live.move) + ' (' + live.move.san + ')</b> — ' + describeMove(c2, mv2) + '.</p>'; }
     } else {
       html += '<p>' + (analyzeChess.in_checkmate() ? 'Checkmate.' : 'Game over — draw.') + '</p>';
     }
   } else if (analyzeReview && analyzePly < analyzeLine.length) {
-    html += '<p><b>Up next, the coach\'s pick is: ' + analyzeReview[analyzePly].bestSan + '</b>.</p>';
+    var upcoming = analyzeReview[analyzePly];
+    html += '<p><b>Up next, the coach\'s pick is: ' + upcoming.bestPlain + ' (' + upcoming.bestSan + ')</b>.</p>';
   } else if (analyzeReview && analyzePly >= analyzeLine.length) {
     html += buildSummaryHtml();
   } else if (!analyzeLine.length && !analyzeChess.game_over()) {
     var res = searchBest(new Chess(analyzeChess.fen()), 2);
-    if (res.move) { var c3 = new Chess(analyzeChess.fen()); var mv3 = c3.move(res.move); html += '<p><b>Coach suggests: ' + res.move.san + '</b> — ' + describeMove(c3, mv3) + '.</p>'; }
+    if (res.move) { var c3 = new Chess(analyzeChess.fen()); var mv3 = c3.move(res.move); html += '<p><b>Coach suggests: ' + plainMove(res.move) + ' (' + res.move.san + ')</b> — ' + describeMove(c3, mv3) + '.</p>'; }
   }
   report.innerHTML = html;
 }
@@ -1679,7 +1702,7 @@ function renderReviewLog() {
     var moveNo = Math.floor(i / 2) + 1;
     var side = (i % 2 === 0) ? 'White' : 'Black';
     html += '<div class="rev-entry tag-' + e.verdict + '">' +
-      '<span class="rev-move">' + moveNo + (side === 'White' ? '.' : '...') + ' ' + e.sanPlayed + '</span>' +
+      '<span class="rev-move">' + moveNo + (side === 'White' ? '.' : '...') + ' ' + e.plainPlayed + ' <span class="rev-san">(' + e.sanPlayed + ')</span></span>' +
       '<span class="rev-label">' + verdictWord(e.verdict) + '</span>' +
       '<p>' + e.comment + '</p></div>';
   }
@@ -1715,7 +1738,10 @@ function analyzeGoTo(n) {
       reviewBtn.textContent = 'Game fully reviewed'; reviewBtn.disabled = true;
     } else {
       reviewBtn.disabled = false;
-      reviewBtn.textContent = 'Review move ' + plyLabel(n) + ' ' + analyzeLine[n] + ' →';
+      var scratchUp = new Chess(analyzeChess.fen());
+      var upRes = scratchUp.move(analyzeLine[n], { sloppy: true });
+      var upPlain = upRes ? plainMove(upRes) : analyzeLine[n];
+      reviewBtn.textContent = 'Review move ' + plyLabel(n) + ' ' + upPlain + ' →';
     }
   }
   if (firstBtn) firstBtn.disabled = (n === 0);
@@ -1741,11 +1767,13 @@ function buildReview(sanList, depth) {
     var t0 = Date.now();
     while (i < total && Date.now() - t0 < 30) {
       if (i < bookPlies) {
-        analyzeReview.push({ sanPlayed: sanList[i], bestSan: sanList[i], lossCp: 0, verdict: 'book', comment: 'Known theory — ' + openingMatch.opening.name + '.' });
+        var bookRes = scratch.move(sanList[i], { sloppy: true });
+        var bookPlain = plainMove(bookRes);
+        analyzeReview.push({ sanPlayed: sanList[i], plainPlayed: bookPlain, bestSan: sanList[i], bestPlain: bookPlain, lossCp: 0, verdict: 'book', comment: 'Known theory — ' + openingMatch.opening.name + '.' });
       } else {
         analyzeReview.push(buildReviewEntry(scratch.fen(), sanList[i], depth));
+        scratch.move(sanList[i], { sloppy: true });
       }
-      scratch.move(sanList[i], { sloppy: true });
       i++;
     }
     log.innerHTML = '<p class="dim">Analyzing your game… ' + i + ' / ' + total + ' moves.</p>';
