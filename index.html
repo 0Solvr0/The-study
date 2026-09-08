@@ -444,20 +444,29 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
         <div>
           <div id="analyze-board"></div>
           <div class="coach-controls">
-            <button class="btn btn-outline btn-small" data-act="first">⏮</button>
-            <button class="btn btn-outline btn-small" data-act="prev">&larr;</button>
-            <button class="btn btn-outline btn-small" data-act="next">&rarr;</button>
-            <button class="btn btn-outline btn-small" data-act="last">⏭</button>
-            <button class="btn btn-outline btn-small" id="analyze-play">Play on from here</button>
+            <button class="btn btn-outline btn-small" data-act="first">⏮ Start</button>
+            <button class="btn btn-outline btn-small" data-act="prev">&larr; Back</button>
+            <button class="btn btn-brass btn-small" data-act="review" id="analyze-review-btn">Review next move &rarr;</button>
+            <label class="mono" style="font-size:12px;color:var(--muted);">SPEED
+              <select id="analyze-depth">
+                <option value="2" selected>Fast</option>
+                <option value="3">Thorough (slower)</option>
+              </select>
+            </label>
+          </div>
+          <div class="coach-controls" style="margin-top:6px;">
+            <button class="btn btn-outline btn-small" id="analyze-play">Play on from here (free play)</button>
           </div>
         </div>
         <div class="coach-side">
-          <h4>Load a position</h4>
+          <h4>Load a game</h4>
           <textarea id="analyze-input" rows="3" placeholder="Paste a FEN or a full PGN here…"></textarea>
-          <button class="btn btn-brass btn-small" id="analyze-load" style="margin-top:8px;">Load</button>
+          <button class="btn btn-brass btn-small" id="analyze-load" style="margin-top:8px;">Load, starting from move 1</button>
           <p class="dim" id="analyze-err" style="color:var(--brick-bright);"></p>
-          <h4>Position report</h4>
-          <div class="coach-notes" id="analyze-report"><p class="dim">Load a position to see material balance, whose move it is, and a suggestion.</p></div>
+          <h4>Position</h4>
+          <div class="coach-notes" id="analyze-report" style="max-height:none;"><p class="dim">Load a game to see the starting position here.</p></div>
+          <h4>Move-by-move review</h4>
+          <div class="coach-notes" id="analyze-review-log"><p class="dim">Load a game, then press “Review next move” to step through it one move at a time.</p></div>
         </div>
       </div>
     </div>
@@ -490,12 +499,23 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
 .coach-side h4{font-size:13px;color:var(--brass-bright);margin:0 0 8px;}
 .coach-side h4:not(:first-child){margin-top:22px;}
 .coach-controls{display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap;}
+.btn:disabled{opacity:.4;cursor:default;}
+.btn:disabled:hover{transform:none;}
 .coach-movelist{font-family:var(--mono);font-size:13px;color:var(--muted);max-height:120px;overflow-y:auto;background:var(--panel);border:1px solid var(--line);padding:10px 12px;}
 .coach-notes{font-size:13.5px;background:var(--panel);border:1px solid var(--line);padding:12px 14px;max-height:260px;overflow-y:auto;}
 .coach-notes p{margin:0 0 8px;}
 .coach-notes p.dim{color:var(--muted-dim);}
 .coach-notes p.tag-good{color:var(--sage-bright);}
 .coach-notes p.tag-warn{color:var(--brick-bright);}
+.rev-entry{border-left:3px solid var(--line);padding-left:10px;margin-bottom:10px;}
+.rev-entry.tag-book{border-color:var(--muted);}
+.rev-entry.tag-best{border-color:var(--sage-bright);}
+.rev-entry.tag-good{border-color:var(--sage);}
+.rev-entry.tag-inaccuracy{border-color:var(--brass);}
+.rev-entry.tag-mistake{border-color:var(--brick);}
+.rev-entry.tag-blunder{border-color:var(--brick-bright);}
+.rev-entry .rev-move{font-family:var(--mono);font-weight:600;color:var(--ivory);}
+.rev-entry .rev-label{font-size:11px;text-transform:none;color:var(--muted-dim);margin-left:6px;}
 #analyze-input{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--ivory);font-family:var(--mono);font-size:12.5px;padding:10px;resize:vertical;}
 .import-intro p{max-width:70ch;font-size:14px;}
 .import-controls{display:flex;gap:10px;margin:16px 0;flex-wrap:wrap;}
@@ -1300,26 +1320,55 @@ function evaluate(chess) {
   }
   return score;
 }
-function searchBest(chess, depth) {
-  var bestMove = null;
+/* Rank moves by a cheap 1-ply static eval first (one move-generation
+   call, no recursion) — used to shortlist candidates before spending
+   real search time on them. This is the main speed lever: chess.js's
+   move generation, not our own code, is the expensive part, so the
+   fewer times we call it per position, the faster everything is. */
+function quickRank(chess) {
   var maximizing = chess.turn() === 'w';
-  var bestScore = maximizing ? -Infinity : Infinity;
   var moves = chess.moves({ verbose: true });
-  // simple move ordering: captures first
-  moves.sort(function (a, b) { return (b.flags.indexOf('c') !== -1 ? 1 : 0) - (a.flags.indexOf('c') !== -1 ? 1 : 0); });
-  for (var i = 0; i < moves.length; i++) {
-    chess.move(moves[i]);
-    var val = alphabeta(chess, depth - 1, -Infinity, Infinity, !maximizing);
+  var scored = moves.map(function (m) {
+    var res = chess.move(m);
+    var s = evaluate(chess);
     chess.undo();
-    if (maximizing && val > bestScore) { bestScore = val; bestMove = moves[i]; }
-    if (!maximizing && val < bestScore) { bestScore = val; bestMove = moves[i]; }
-  }
-  return { move: bestMove, score: bestScore };
+    return { move: m, san: res.san, quick: s };
+  });
+  scored.sort(function (a, b) { return maximizing ? b.quick - a.quick : a.quick - b.quick; });
+  return scored;
 }
+/** Deepen only a shortlist of the most promising candidates (plus, if
+ *  given, a specific move that must be included even if it looked bad
+ *  at a glance — we still need its real score to grade it fairly). */
+function deepen(fen, depth, shortlistSize, forceSan) {
+  var chess = new Chess(fen);
+  var maximizing = chess.turn() === 'w';
+  var ranked = quickRank(chess);
+  var shortlist = ranked.slice(0, shortlistSize || 8);
+  if (forceSan && !shortlist.some(function (e) { return e.san === forceSan; })) {
+    var forced = ranked.filter(function (e) { return e.san === forceSan; })[0];
+    if (forced) shortlist = shortlist.concat([forced]);
+  }
+  var out = shortlist.map(function (entry) {
+    var res = chess.move(entry.move);
+    var val = depth <= 1 ? entry.quick : alphabeta(chess, depth - 1, -Infinity, Infinity, !maximizing);
+    var desc = describeMove(chess, res);
+    chess.undo();
+    return { move: entry.move, san: entry.san, score: val, desc: desc };
+  });
+  out.sort(function (a, b) { return maximizing ? b.score - a.score : a.score - b.score; });
+  return out;
+}
+function searchBest(chess, depth) {
+  var out = deepen(chess.fen(), depth, 8);
+  return out.length ? { move: out[0].move, score: out[0].score } : { move: null, score: 0 };
+}
+
 function alphabeta(chess, depth, alpha, beta, maximizing) {
   if (depth === 0 || chess.game_over()) return evaluate(chess);
   var moves = chess.moves({ verbose: true });
   moves.sort(function (a, b) { return (b.flags.indexOf('c') !== -1 ? 1 : 0) - (a.flags.indexOf('c') !== -1 ? 1 : 0); });
+  if (moves.length > 14) moves = moves.slice(0, 14); // cap branching — this is a club-level heuristic coach, not a full engine
   if (maximizing) {
     var best = -Infinity;
     for (var i = 0; i < moves.length; i++) {
@@ -1372,9 +1421,64 @@ function blunderCheck(chess) {
   return null;
 }
 
-/* ============================================================
-   5. COACH — practice / analyze / import
-   ============================================================ */
+/** Same idea as searchBest, but also guarantees the actually-played
+ *  move is scored even if it wasn't a promising-looking candidate —
+ *  that's the whole point when grading a move that might be a blunder. */
+function evaluateAllMoves(fen, depth, forceSan) {
+  return deepen(fen, depth, 8, forceSan);
+}
+/** Classify how many centipawns a move gave up compared to the best
+ *  available move, using the same rough bands most analysis tools use. */
+function classifyLoss(lossCp, isBest) {
+  if (isBest || lossCp <= 25) return 'best';
+  if (lossCp <= 90) return 'good';
+  if (lossCp <= 200) return 'inaccuracy';
+  if (lossCp <= 450) return 'mistake';
+  return 'blunder';
+}
+var VERDICT_LABEL = { book: 'Book move', best: 'Best move', good: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder' };
+/** Grade one played move against the coach's own top pick from the same
+ *  position. Returns everything the review log needs to display. */
+function buildReviewEntry(fen, actualSan, depth) {
+  var maximizing = new Chess(fen).turn() === 'w';
+  var all = evaluateAllMoves(fen, depth, actualSan);
+  var bestEntry = all[0];
+  var actualEntry = null;
+  for (var i = 0; i < all.length; i++) { if (all[i].san === actualSan) { actualEntry = all[i]; break; } }
+  if (!actualEntry) {
+    var norm = actualSan.replace(/[+#]/g, '');
+    for (var j = 0; j < all.length; j++) { if (all[j].san.replace(/[+#]/g, '') === norm) { actualEntry = all[j]; break; } }
+  }
+  var lossCp = 0;
+  if (actualEntry) {
+    lossCp = maximizing ? (bestEntry.score - actualEntry.score) : (actualEntry.score - bestEntry.score);
+    if (lossCp < 0) lossCp = 0;
+  }
+  var isBest = !!actualEntry && actualEntry.san === bestEntry.san;
+  var verdict = classifyLoss(lossCp, isBest);
+  var comment;
+  if (isBest) {
+    comment = 'That\'s the coach\'s top choice in this position.';
+  } else if (verdict === 'good') {
+    comment = 'Close to the top choice, ' + bestEntry.san + ' — only a small difference.';
+  } else {
+    var pawns = (lossCp / 100).toFixed(1).replace(/\.0$/, '');
+    comment = 'The coach\'s pick was ' + bestEntry.san + ', which ' + bestEntry.desc + ' and comes out about ' + pawns + ' pawn(s) ahead of ' + actualSan + '.';
+    if (verdict === 'mistake' || verdict === 'blunder') {
+      try {
+        var scratch = new Chess(fen);
+        scratch.move(actualSan, { sloppy: true });
+        if (!scratch.game_over()) {
+          var reply = evaluateAllMoves(scratch.fen(), 1)[0];
+          if (reply) comment += ' The critical follow-up is ' + reply.san + '.';
+        }
+      } catch (e) { /* best-effort only */ }
+    }
+  }
+  return { sanPlayed: actualSan, bestSan: bestEntry.san, lossCp: lossCp, verdict: verdict, comment: comment };
+}
+
+
 function switchCoachTab(name) {
   document.querySelectorAll('.coach-tab').forEach(function (b) {
     b.classList.toggle('active', b.dataset.tab === name);
@@ -1469,13 +1573,19 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 });
 
-/* ---------- Analyze a position ---------- */
+/* ---------- Analyze a position / review a game ----------
+   Every move in a loaded game is graded ONCE, up front, in the
+   background (buildReview). After that, Start/Back/Review-next
+   are pure lookups into that precomputed array — no searching
+   happens on the click itself, so navigation is instant. */
 var analyzeChess = new Chess();
 var analyzeBoard = null;
-var analyzeLine = [];   // SAN history when a PGN was loaded
+var analyzeLine = [];        // SAN history when a PGN was loaded
 var analyzePly = 0;
 var analyzeFromStart = false;
 var analyzeFree = false;
+var analyzeReview = null;    // filled in by buildReview(); one entry per ply
+var analyzeReviewToken = 0;  // guards against a stale async build finishing late
 
 function initAnalyzeBoard() {
   analyzeBoard = new ChessBoard(document.getElementById('analyze-board'), analyzeChess, {
@@ -1492,36 +1602,148 @@ function findOpeningMatch(sanHistory) {
   });
   return best ? { opening: best, ply: bestLen } : null;
 }
+
+/* ---- the "Position" panel: facts about the position on screen now ---- */
 function renderAnalyzeReport() {
   var report = document.getElementById('analyze-report');
   var board = analyzeChess.board();
   var wMat = 0, bMat = 0;
-  for (var r=0;r<8;r++) for (var f=0;f<8;f++){ var p=board[r][f]; if(p && p.type!=='k'){ if(p.color==='w') wMat+=PIECE_VAL[p.type]; else bMat+=PIECE_VAL[p.type]; } }
+  for (var r = 0; r < 8; r++) for (var f = 0; f < 8; f++) { var p = board[r][f]; if (p && p.type !== 'k') { if (p.color === 'w') wMat += PIECE_VAL[p.type]; else bMat += PIECE_VAL[p.type]; } }
   var diff = (wMat - bMat) / 100;
-  var matStr = diff === 0 ? 'Material is even.' : (diff > 0 ? 'White is up about ' + diff.toFixed(1).replace(/\.0$/,'') + ' pawn(s) of material.' : 'Black is up about ' + Math.abs(diff).toFixed(1).replace(/\.0$/,'') + ' pawn(s) of material.');
+  var matStr = diff === 0 ? 'Material is even.' : (diff > 0 ? 'White is up about ' + diff.toFixed(1).replace(/\.0$/, '') + ' pawn(s) of material.' : 'Black is up about ' + Math.abs(diff).toFixed(1).replace(/\.0$/, '') + ' pawn(s) of material.');
   var turnStr = (analyzeChess.turn() === 'w' ? 'White' : 'Black') + ' to move' + (analyzeChess.in_check() ? ', and in check.' : '.');
   var html = '<p>' + turnStr + '</p><p>' + matStr + '</p>';
+
   if (analyzeFromStart) {
-    var hist = analyzeChess.history();
-    var match = findOpeningMatch(hist);
-    if (match) html += '<p>Following <b>' + match.opening.name + '</b> (' + match.opening.eco + ')' + (match.ply < hist.length ? ' — deviated at move ' + Math.ceil(match.ply/2) + '.' : '.') + '</p>';
+    var match = findOpeningMatch(analyzeChess.history());
+    if (match) html += '<p>Following <b>' + match.opening.name + '</b> (' + match.opening.eco + ')' + (match.ply < analyzeChess.history().length ? ' — deviated at move ' + Math.ceil(match.ply / 2) + '.' : '.') + '</p>';
   }
-  if (!analyzeChess.game_over()) {
-    var res = searchBest(new Chess(analyzeChess.fen()), 3);
-    if (res.move) html += '<p><b>Coach suggests: ' + res.move.san + '</b> — ' + (function(){ var c2 = new Chess(analyzeChess.fen()); var mv = c2.move(res.move); return describeMove(c2, mv); })() + '.</p>';
-  } else {
-    html += '<p>' + (analyzeChess.in_checkmate() ? 'Checkmate.' : 'Game over — draw.') + '</p>';
+
+  if (analyzeFree) {
+    if (!analyzeChess.game_over()) {
+      var live = searchBest(new Chess(analyzeChess.fen()), 2);
+      if (live.move) { var c2 = new Chess(analyzeChess.fen()); var mv2 = c2.move(live.move); html += '<p><b>Coach suggests: ' + live.move.san + '</b> — ' + describeMove(c2, mv2) + '.</p>'; }
+    } else {
+      html += '<p>' + (analyzeChess.in_checkmate() ? 'Checkmate.' : 'Game over — draw.') + '</p>';
+    }
+  } else if (analyzeReview && analyzePly < analyzeLine.length) {
+    html += '<p><b>Up next, the coach\'s pick is: ' + analyzeReview[analyzePly].bestSan + '</b>.</p>';
+  } else if (analyzeReview && analyzePly >= analyzeLine.length) {
+    html += buildSummaryHtml();
+  } else if (!analyzeLine.length && !analyzeChess.game_over()) {
+    var res = searchBest(new Chess(analyzeChess.fen()), 2);
+    if (res.move) { var c3 = new Chess(analyzeChess.fen()); var mv3 = c3.move(res.move); html += '<p><b>Coach suggests: ' + res.move.san + '</b> — ' + describeMove(c3, mv3) + '.</p>'; }
   }
   report.innerHTML = html;
 }
+function verdictWord(v) { return VERDICT_LABEL[v] || v; }
+function buildSummaryHtml() {
+  var counts = { book: 0, best: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0 };
+  analyzeReview.forEach(function (e) { counts[e.verdict]++; });
+  return '<p><b>Game reviewed.</b> ' + counts.book + ' book, ' + counts.best + ' best, ' + counts.good + ' good, ' +
+    counts.inaccuracy + ' inaccurac' + (counts.inaccuracy === 1 ? 'y' : 'ies') + ', ' +
+    counts.mistake + ' mistake' + (counts.mistake === 1 ? '' : 's') + ', ' +
+    counts.blunder + ' blunder' + (counts.blunder === 1 ? '' : 's') + '.</p>';
+}
+
+/* ---- the "Move-by-move review" log: a running transcript up to the
+   current ply, rebuilt from the precomputed array every time you move
+   through the game — so it's always correct regardless of direction. */
+function renderReviewLog() {
+  var log = document.getElementById('analyze-review-log');
+  if (!analyzeReview) {
+    log.innerHTML = '<p class="dim">Load a game, then press “Review next move” to step through it one move at a time.</p>';
+    return;
+  }
+  if (analyzePly === 0) {
+    log.innerHTML = '<p class="dim">Press “Review next move” to see feedback on move 1.</p>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < analyzePly; i++) {
+    var e = analyzeReview[i];
+    var moveNo = Math.floor(i / 2) + 1;
+    var side = (i % 2 === 0) ? 'White' : 'Black';
+    html += '<div class="rev-entry tag-' + e.verdict + '">' +
+      '<span class="rev-move">' + moveNo + (side === 'White' ? '.' : '...') + ' ' + e.sanPlayed + '</span>' +
+      '<span class="rev-label">' + verdictWord(e.verdict) + '</span>' +
+      '<p>' + e.comment + '</p></div>';
+  }
+  log.innerHTML = html;
+  log.scrollTop = log.scrollHeight;
+}
+
+/* ---- navigation: instant, since it only ever reads precomputed data ---- */
+function plyLabel(ply) {
+  var moveNo = Math.floor(ply / 2) + 1;
+  return moveNo + (ply % 2 === 0 ? '.' : '...');
+}
 function analyzeGoTo(n) {
+  analyzeFree = false;
+  if (analyzeBoard) { analyzeBoard.interactive = false; analyzeBoard.restrictSide = null; }
+  var playBtn = document.getElementById('analyze-play');
+  if (playBtn) playBtn.textContent = 'Play on from here (free play)';
   analyzeChess.reset();
   for (var i = 0; i < n; i++) analyzeChess.move(analyzeLine[i], { sloppy: true });
   analyzePly = n;
   var lm = n > 0 ? analyzeChess.history({ verbose: true }).slice(-1)[0] : null;
   analyzeBoard.setPosition(analyzeChess.fen(), lm ? { from: lm.from, to: lm.to } : null);
   renderAnalyzeReport();
+  renderReviewLog();
+
+  var reviewBtn = document.getElementById('analyze-review-btn');
+  var firstBtn = document.querySelector('#panel-analyze [data-act="first"]');
+  var prevBtn = document.querySelector('#panel-analyze [data-act="prev"]');
+  if (reviewBtn) {
+    if (!analyzeLine.length) {
+      reviewBtn.textContent = 'Review next move →'; reviewBtn.disabled = true;
+    } else if (n >= analyzeLine.length) {
+      reviewBtn.textContent = 'Game fully reviewed'; reviewBtn.disabled = true;
+    } else {
+      reviewBtn.disabled = false;
+      reviewBtn.textContent = 'Review move ' + plyLabel(n) + ' ' + analyzeLine[n] + ' →';
+    }
+  }
+  if (firstBtn) firstBtn.disabled = (n === 0);
+  if (prevBtn) prevBtn.disabled = (n === 0);
 }
+
+/* ---- one-time background grading of the whole game, chunked so the
+   tab never freezes; progress shows in the review log while it runs ---- */
+function buildReview(sanList, depth) {
+  var token = ++analyzeReviewToken;
+  analyzeReview = [];
+  var log = document.getElementById('analyze-review-log');
+  var scratch = new Chess();
+  var i = 0, total = sanList.length;
+  if (total === 0) { analyzeGoTo(0); return; }
+  // Known opening theory doesn't need to be run through the search — it's
+  // both faster and more honest to just say "book move" than to grade a
+  // named opening line against our own shallow evaluation.
+  var openingMatch = findOpeningMatch(sanList);
+  var bookPlies = openingMatch ? openingMatch.ply : 0;
+  function step() {
+    if (token !== analyzeReviewToken) return; // a newer game was loaded meanwhile
+    var t0 = Date.now();
+    while (i < total && Date.now() - t0 < 30) {
+      if (i < bookPlies) {
+        analyzeReview.push({ sanPlayed: sanList[i], bestSan: sanList[i], lossCp: 0, verdict: 'book', comment: 'Known theory — ' + openingMatch.opening.name + '.' });
+      } else {
+        analyzeReview.push(buildReviewEntry(scratch.fen(), sanList[i], depth));
+      }
+      scratch.move(sanList[i], { sloppy: true });
+      i++;
+    }
+    log.innerHTML = '<p class="dim">Analyzing your game… ' + i + ' / ' + total + ' moves.</p>';
+    if (i < total) {
+      setTimeout(step, 0);
+    } else {
+      analyzeGoTo(0);
+    }
+  }
+  step();
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   initAnalyzeBoard();
   document.getElementById('analyze-load').addEventListener('click', function () {
@@ -1531,19 +1753,22 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!raw) return;
     var looksLikeFen = /^[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\/[pnbrqkPNBRQK1-8]+\s+[wb]\s/.test(raw);
     var fresh = new Chess();
+    analyzeReviewToken++; // cancel any build still in flight
     if (looksLikeFen) {
       var ok = fresh.load(raw);
       if (!ok) { err.textContent = 'That FEN doesn\'t look valid — double check it and try again.'; return; }
-      analyzeLine = []; analyzePly = 0; analyzeFromStart = false;
+      analyzeLine = []; analyzePly = 0; analyzeFromStart = false; analyzeReview = null;
       analyzeChess.load(raw);
       analyzeBoard.setPosition(analyzeChess.fen(), null);
       renderAnalyzeReport();
+      renderReviewLog();
     } else {
       var ok2 = fresh.load_pgn(raw, { sloppy: true });
       if (!ok2 || fresh.history().length === 0) { err.textContent = 'Couldn\'t read that as a FEN or a PGN — paste a full FEN string, or PGN move text like "1.e4 e5 2.Nf3 …".'; return; }
       analyzeLine = fresh.history();
       analyzeFromStart = true;
-      analyzeGoTo(analyzeLine.length);
+      var depth = parseInt(document.getElementById('analyze-depth').value, 10);
+      buildReview(analyzeLine, depth);
     }
   });
   document.querySelectorAll('#panel-analyze [data-act]').forEach(function (btn) {
@@ -1551,15 +1776,30 @@ document.addEventListener('DOMContentLoaded', function () {
       var act = this.dataset.act;
       if (act === 'first') analyzeGoTo(0);
       if (act === 'prev') analyzeGoTo(Math.max(0, analyzePly - 1));
-      if (act === 'next') analyzeGoTo(Math.min(analyzeLine.length, analyzePly + 1));
-      if (act === 'last') analyzeGoTo(analyzeLine.length);
+      if (act === 'review') analyzeGoTo(Math.min(analyzeLine.length, analyzePly + 1));
     });
   });
+  document.getElementById('analyze-depth').addEventListener('change', function () {
+    if (analyzeLine.length) {
+      var keepPly = analyzePly;
+      var depth = parseInt(this.value, 10);
+      buildReview(analyzeLine, depth);
+      // buildReview jumps to ply 0 when done; hop back to where the user was
+      var checkBack = setInterval(function () {
+        if (analyzeReview && analyzeReview.length === analyzeLine.length) {
+          clearInterval(checkBack);
+          analyzeGoTo(keepPly);
+        }
+      }, 50);
+    }
+  });
   document.getElementById('analyze-play').addEventListener('click', function () {
+    analyzeFree = true;
     analyzeBoard.interactive = true;
     analyzeBoard.restrictSide = null;
     analyzeBoard.render();
     this.textContent = 'Free play enabled — move either side';
+    renderAnalyzeReport();
   });
 });
 
