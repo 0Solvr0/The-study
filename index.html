@@ -10,24 +10,24 @@
 <style>
 /* ============================= TOKENS ============================= */
 :root{
-  --ink:#15120d;
-  --panel:#1c1811;
-  --panel-raised:#241e15;
-  --line:#392f22;
-  --line-soft:#2a2419;
-  --wood-dark:#7a5636;
-  --wood-light:#cdb98a;
-  --ivory:#f3ecdd;
-  --ivory-dim:#d9cfb9;
-  --muted:#a89a80;
-  --muted-dim:#7d715c;
+  --ink:#1b130c;
+  --panel:#221910;
+  --panel-raised:#2b2013;
+  --line:#4a3623;
+  --line-soft:#33261a;
+  --wood-dark:#b5835a;
+  --wood-light:#ecd7ad;
+  --ivory:#f6efe0;
+  --ivory-dim:#ddd0b8;
+  --muted:#b5a689;
+  --muted-dim:#8a7c62;
   --brass:#c69a48;
   --brass-bright:#e3bb6d;
   --sage:#83a172;
   --sage-bright:#a3c48f;
   --brick:#c05f42;
   --brick-bright:#dd7e5e;
-  --shadow: 0 12px 30px rgba(0,0,0,.35);
+  --shadow: 0 12px 30px rgba(0,0,0,.5);
   --radius-card: 2px;
   --serif: 'Fraunces', Georgia, serif;
   --sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -38,13 +38,24 @@
 html{scroll-behavior:smooth;}
 body{
   margin:0;
-  background:var(--ink);
+  background:
+    radial-gradient(ellipse 1400px 900px at 15% -10%, rgba(181,131,90,.10), transparent 60%),
+    radial-gradient(ellipse 1200px 800px at 105% 10%, rgba(181,131,90,.08), transparent 55%),
+    linear-gradient(180deg, #1f160e 0%, var(--ink) 40%, #17110b 100%);
   color:var(--ivory);
   font-family:var(--sans);
   font-size:16px;
   line-height:1.5;
   -webkit-font-smoothing:antialiased;
+  position:relative;
 }
+/* decorative scattered chess pieces, echoing a wood chess table without
+   copying any specific photo — plain unicode glyphs, very low opacity */
+.piece-field{
+  position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none;
+  color:var(--wood-light);opacity:.05;font-family:'Segoe UI Symbol','Noto Sans Symbols',sans-serif;
+}
+.piece-field span{position:absolute;line-height:1;}
 img{max-width:100%;display:block;}
 a{color:inherit;}
 h1,h2,h3,h4{
@@ -177,8 +188,8 @@ nav.primary a:hover, nav.primary a.active{color:var(--ivory);}
 .sq.light{background:var(--wood-light);}
 .sq.dark{background:var(--wood-dark);}
 .sq .pc{position:relative;z-index:1;font-size:calc(var(--sq,44px) * .72);cursor:pointer;transition:transform .08s ease;}
-.sq .pc.white{color:#fbf7ee;filter:drop-shadow(0 1px 1px rgba(0,0,0,.55));}
-.sq .pc.black{color:#1a140c;filter:drop-shadow(0 1px 0 rgba(255,255,255,.12));}
+.sq .pc.white{color:#fefcf6;-webkit-text-stroke:.55px rgba(30,20,10,.55);filter:drop-shadow(0 1px 1px rgba(0,0,0,.35));}
+.sq .pc.black{color:#221a10;-webkit-text-stroke:.4px rgba(255,250,240,.25);filter:drop-shadow(0 1px 0 rgba(255,255,255,.1));}
 .sq.selected{box-shadow:inset 0 0 0 3px var(--brass-bright);}
 .sq.last-from, .sq.last-to{box-shadow:inset 0 0 0 3px rgba(198,154,72,.55);}
 .sq .dot{width:14px;height:14px;border-radius:50%;background:rgba(20,15,8,.38);position:absolute;pointer-events:none;}
@@ -204,6 +215,14 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
 </style>
 </head>
 <body>
+<div class="piece-field" aria-hidden="true">
+  <span style="left:-4%;top:6%;font-size:340px;transform:rotate(-18deg);">♞</span>
+  <span style="right:-6%;top:2%;font-size:420px;transform:rotate(12deg);">♜</span>
+  <span style="left:8%;bottom:-10%;font-size:380px;transform:rotate(8deg);">♛</span>
+  <span style="right:2%;bottom:-8%;font-size:300px;transform:rotate(-14deg);">♝</span>
+  <span style="left:42%;top:-8%;font-size:260px;transform:rotate(5deg);">♚</span>
+  <span style="right:38%;bottom:-14%;font-size:320px;transform:rotate(-6deg);">♟</span>
+</div>
 
 <header class="site">
   <div class="nav-inner">
@@ -444,7 +463,11 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
       <div class="coach-layout">
         <div>
           <div id="analyze-normal-view">
-            <div id="analyze-board"></div>
+            <div class="board-header" id="analyze-board-header"></div>
+            <div class="board-with-eval">
+              <div class="eval-bar-wrap"><div class="eval-bar-fill" id="eval-bar-fill"></div></div>
+              <div id="analyze-board"></div>
+            </div>
             <div class="coach-controls">
               <button class="btn btn-outline btn-small" data-act="first">⏮ Start</button>
               <button class="btn btn-outline btn-small" data-act="prev">&larr; Back</button>
@@ -482,6 +505,8 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
             </div>
           </details>
           <div id="analyze-summary"></div>
+          <h4>Moves</h4>
+          <div class="movetable-wrap" id="analyze-movetable"><p class="dim">No game loaded yet.</p></div>
           <h4>Position</h4>
           <div class="coach-notes" id="analyze-report" style="max-height:none;"><p class="dim">Load a game to see the starting position here.</p></div>
           <h4>Move-by-move review</h4>
@@ -527,6 +552,36 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
 .load-details summary:hover{color:var(--ivory);}
 .load-details-body{padding:0 14px 14px;}
 .coach-side h4:not(:first-of-type){margin-top:22px;}
+
+/* chess.com-style board header + eval bar */
+.board-header{
+  display:flex;justify-content:space-between;align-items:center;
+  font-family:var(--sans);font-size:14px;color:var(--ivory-dim);margin-bottom:8px;max-width:fit-content;
+}
+.board-header b{color:var(--ivory);}
+.board-header .vs{color:var(--muted-dim);margin:0 8px;font-size:12px;}
+.board-header .bh-result{margin-left:12px;font-family:var(--mono);font-size:12px;color:var(--brass-bright);}
+.board-with-eval{display:flex;gap:8px;align-items:flex-start;}
+.eval-bar-wrap{
+  width:14px;height:368px;background:#2a2018;border:1px solid var(--line);position:relative;overflow:hidden;flex:none;
+}
+.eval-bar-fill{position:absolute;bottom:0;left:0;width:100%;background:var(--wood-light);height:50%;transition:height .25s ease;}
+
+/* clickable move-list table, chess.com style */
+.movetable-wrap{max-height:220px;overflow-y:auto;border:1px solid var(--line);background:var(--panel);}
+table.movetable{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:13px;}
+table.movetable td{padding:6px 8px;cursor:pointer;border-bottom:1px solid var(--line-soft);white-space:nowrap;}
+table.movetable td.mv-num{color:var(--muted-dim);font-family:var(--mono);width:28px;cursor:default;}
+table.movetable td.mv-cell{color:var(--ivory-dim);}
+table.movetable td.mv-cell:hover{background:var(--panel-raised);}
+table.movetable td.mv-cell.current{background:var(--panel-raised);color:var(--ivory);}
+table.movetable .mv-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;background:var(--muted-dim);}
+table.movetable .mv-dot.book{background:var(--muted);}
+table.movetable .mv-dot.best{background:var(--sage-bright);}
+table.movetable .mv-dot.good{background:var(--sage);}
+table.movetable .mv-dot.inaccuracy{background:var(--brass);}
+table.movetable .mv-dot.mistake{background:var(--brick);}
+table.movetable .mv-dot.blunder{background:var(--brick-bright);}
 
 /* game summary cards */
 .gs-card{background:var(--panel);border:1px solid var(--line);padding:14px 16px;margin-bottom:10px;}
@@ -579,6 +634,70 @@ footer.site p{font-size:13px;color:var(--muted-dim);margin:0;}
 @media (max-width:800px){
   .coach-layout{grid-template-columns:1fr;}
   .coach-side{max-width:none;}
+}
+</style>
+
+<!-- Guided lesson overlay, in the style of a step-by-step chess lesson:
+     a coach bubble, one challenge at a time, hints, and a progress bar. -->
+<div id="lesson-overlay" class="lesson-overlay" style="display:none;">
+  <div class="piece-field" aria-hidden="true" style="opacity:.06;">
+    <span style="left:-6%;top:8%;font-size:300px;transform:rotate(-14deg);">♝</span>
+    <span style="right:-8%;bottom:4%;font-size:360px;transform:rotate(10deg);">♞</span>
+  </div>
+  <div class="lesson-topbar">
+    <button id="lesson-back" class="lesson-back" aria-label="Back to openings">&larr;</button>
+    <span class="lesson-title" id="lesson-title">Lesson</span>
+  </div>
+  <div class="lesson-body">
+    <div class="lesson-board-col">
+      <div class="board-wrap" id="lesson-board"></div>
+    </div>
+    <div class="lesson-side-col">
+      <div class="lesson-coach">
+        <div class="lesson-avatar">♗</div>
+        <div class="lesson-bubble" id="lesson-bubble">Loading…</div>
+      </div>
+      <button class="btn btn-brass" id="lesson-start-btn" style="width:100%;justify-content:center;">✓ Start</button>
+      <div id="lesson-progress-wrap" style="display:none;">
+        <div class="lesson-progress-label" id="lesson-progress-label"></div>
+        <div class="lesson-progress-bar"><div class="lesson-progress-fill" id="lesson-progress-fill"></div></div>
+      </div>
+      <div class="lesson-controls" id="lesson-controls" style="display:none;">
+        <button class="btn btn-outline btn-small" id="lesson-hint">💡 Hint</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+.lesson-overlay{
+  position:fixed;inset:0;z-index:200;background:var(--ink);overflow-y:auto;
+}
+.lesson-topbar{
+  display:flex;align-items:center;gap:14px;padding:18px 28px;border-bottom:1px solid var(--line-soft);
+  position:sticky;top:0;background:rgba(27,19,12,.92);backdrop-filter:blur(6px);z-index:2;
+}
+.lesson-back{background:none;border:1px solid var(--line);color:var(--ivory);width:36px;height:36px;cursor:pointer;font-size:16px;}
+.lesson-title{font-family:var(--serif);font-size:18px;color:var(--ivory);}
+.lesson-body{max-width:900px;margin:0 auto;padding:40px 28px 80px;display:grid;grid-template-columns:1fr 320px;gap:36px;align-items:start;position:relative;}
+.lesson-coach{display:flex;gap:14px;align-items:flex-start;margin-bottom:20px;}
+.lesson-avatar{
+  flex:none;width:48px;height:48px;border-radius:50%;background:var(--panel-raised);border:1px solid var(--line);
+  display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--brass-bright);
+}
+.lesson-bubble{
+  background:var(--ivory);color:#2a2018;padding:14px 16px;font-size:15px;line-height:1.45;
+  position:relative;border-radius:2px;
+}
+.lesson-bubble::before{
+  content:"";position:absolute;left:-7px;top:16px;width:14px;height:14px;background:var(--ivory);transform:rotate(45deg);
+}
+.lesson-progress-label{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:6px;}
+.lesson-progress-bar{height:6px;background:var(--panel-raised);border:1px solid var(--line);}
+.lesson-progress-fill{height:100%;background:var(--sage-bright);width:0%;transition:width .3s ease;}
+.lesson-controls{margin-top:16px;}
+@media (max-width:820px){
+  .lesson-body{grid-template-columns:1fr;}
 }
 </style>
 
@@ -1089,6 +1208,7 @@ function renderOpenings() {
               '<button class="btn btn-outline btn-small" data-act="next">&rarr;</button>' +
               '<button class="btn btn-outline btn-small" data-act="last">⏭</button>' +
               '<button class="btn btn-brass btn-small" data-act="practice">Practice from here</button>' +
+              '<button class="btn btn-outline btn-small" data-act="lesson">▶ Play as a guided lesson</button>' +
             '</div></div>' +
             '<div class="op-notes">' +
               '<h4>The idea</h4><p>' + o.idea + '</p>' +
@@ -1132,6 +1252,9 @@ function renderOpenings() {
           document.getElementById('coach').scrollIntoView({ behavior: 'smooth' });
           switchCoachTab('practice');
           setTimeout(function () { resetPracticeGame(chess.fen()); }, 350);
+        });
+        body.querySelector('[data-act="lesson"]').addEventListener('click', function () {
+          openLesson(o);
         });
         goTo(o.moves.length);
         initedBoard = true;
@@ -1201,6 +1324,118 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('hero-shuffle').addEventListener('click', function () { stopAuto(); cursor++; load(cursor); });
   });
 })();
+
+/* ============================================================
+   2b. GUIDED LESSON PLAYER — a chess.com "Learn"-style walkthrough,
+   auto-generated from an opening's move list + its existing notes.
+   One challenge per ply: see the position, find the move, get a
+   coach comment, move on. No per-opening scripting needed.
+   ============================================================ */
+function buildOpeningLessonSteps(o) {
+  var chess = new Chess();
+  var steps = [];
+  for (var i = 0; i < o.moves.length; i++) {
+    var fenBefore = chess.fen();
+    var mover = chess.turn();
+    var res = chess.move(o.moves[i], { sloppy: true });
+    var coachText;
+    if (i === 0) coachText = o.idea;
+    else if (i === 2 && o.planWhite) coachText = o.planWhite;
+    else if (i === 3 && o.planBlack) coachText = o.planBlack;
+    else coachText = 'Play ' + plainMove(res) + '.';
+    steps.push({
+      fen: fenBefore,
+      sideToMove: mover,
+      solutionSans: [o.moves[i]],
+      hint: 'Look at the ' + (PIECE_NAME[res.piece] || 'piece') + ' that can reach ' + res.to + '.',
+      coachText: coachText,
+      successText: (i === o.moves.length - 1)
+        ? 'That\'s the main line of the ' + o.name + '. ' + (o.trap ? o.trap.note : 'Nicely played.')
+        : 'Good.'
+    });
+  }
+  return steps;
+}
+var lessonSteps = [];
+var lessonIdx = 0;
+var lessonChess = null;
+var lessonBoard = null;
+function openLesson(opening) {
+  lessonSteps = buildOpeningLessonSteps(opening);
+  lessonIdx = 0;
+  document.getElementById('lesson-title').textContent = opening.name;
+  document.getElementById('lesson-overlay').style.display = '';
+  document.body.style.overflow = 'hidden';
+  document.getElementById('lesson-start-btn').style.display = '';
+  document.getElementById('lesson-progress-wrap').style.display = 'none';
+  document.getElementById('lesson-controls').style.display = 'none';
+  document.getElementById('lesson-bubble').textContent = opening.summary;
+  if (!lessonChess) lessonChess = new Chess();
+  lessonChess.load(lessonSteps[0].fen);
+  if (!lessonBoard) {
+    lessonBoard = new ChessBoard(document.getElementById('lesson-board'), lessonChess, { size: 46, interactive: false, onMove: function (mv) { handleLessonMove(mv); } });
+  } else {
+    lessonBoard.setPosition(lessonSteps[0].fen, null);
+  }
+}
+function closeLesson() {
+  document.getElementById('lesson-overlay').style.display = 'none';
+  document.body.style.overflow = '';
+}
+function startLesson() {
+  document.getElementById('lesson-start-btn').style.display = 'none';
+  document.getElementById('lesson-progress-wrap').style.display = '';
+  document.getElementById('lesson-controls').style.display = '';
+  loadLessonStep(0);
+}
+function loadLessonStep(idx) {
+  lessonIdx = idx;
+  var step = lessonSteps[idx];
+  lessonChess.load(step.fen);
+  lessonBoard.restrictSide = step.sideToMove;
+  lessonBoard.interactive = true;
+  lessonBoard.setPosition(step.fen, null);
+  document.getElementById('lesson-bubble').textContent = (step.sideToMove === 'w' ? 'White to move. ' : 'Black to move. ') + step.coachText;
+  document.getElementById('lesson-progress-label').textContent = 'Challenge ' + (idx + 1) + ' / ' + lessonSteps.length;
+  document.getElementById('lesson-progress-fill').style.width = Math.round(((idx) / lessonSteps.length) * 100) + '%';
+}
+function handleLessonMove(mv) {
+  var step = lessonSteps[lessonIdx];
+  var norm = mv.san.replace(/[+#]/g, '');
+  var ok = step.solutionSans.some(function (s) { return s.replace(/[+#]/g, '') === norm; });
+  if (ok) {
+    document.getElementById('lesson-progress-fill').style.width = Math.round(((lessonIdx + 1) / lessonSteps.length) * 100) + '%';
+    document.getElementById('lesson-bubble').textContent = '✓ ' + plainMove(mv) + ' is correct. ' + step.successText;
+    lessonBoard.interactive = false;
+    if (lessonIdx < lessonSteps.length - 1) {
+      setTimeout(function () { loadLessonStep(lessonIdx + 1); }, 1300);
+    } else {
+      setTimeout(function () {
+        document.getElementById('lesson-controls').style.display = 'none';
+        var bubble = document.getElementById('lesson-bubble');
+        bubble.innerHTML = '<b>Lesson complete!</b> You\'ve played through the whole line.';
+        var again = document.createElement('button');
+        again.className = 'btn btn-brass btn-small';
+        again.style.marginTop = '10px';
+        again.textContent = 'Start over';
+        again.addEventListener('click', function () { document.getElementById('lesson-start-btn').click(); });
+        bubble.appendChild(document.createElement('br'));
+        bubble.appendChild(again);
+      }, 1300);
+    }
+  } else {
+    document.getElementById('lesson-bubble').textContent = plainMove(mv) + ' isn\'t the move here — try again, or use the hint.';
+    lessonChess.load(step.fen);
+    lessonBoard.setPosition(step.fen, null);
+  }
+}
+document.addEventListener('DOMContentLoaded', function () {
+  document.getElementById('lesson-back').addEventListener('click', closeLesson);
+  document.getElementById('lesson-start-btn').addEventListener('click', startLesson);
+  document.getElementById('lesson-hint').addEventListener('click', function () {
+    document.getElementById('lesson-bubble').textContent = '💡 ' + lessonSteps[lessonIdx].hint;
+  });
+});
 
 /* ============================================================
    3. TACTICS DATA (fen + solution validated against chess.js)
@@ -1953,6 +2188,52 @@ function renderReviewLog() {
   log.innerHTML = html;
   log.scrollTop = log.scrollHeight;
 }
+/* chess.com-style two-column clickable move list — always shows the
+   whole game; dots turn colored once that move has been through review. */
+function renderMoveTable() {
+  var el = document.getElementById('analyze-movetable');
+  if (!analyzeLine.length) { el.innerHTML = '<p class="dim">No game loaded yet.</p>'; return; }
+  var rows = '<table class="movetable"><tbody>';
+  for (var i = 0; i < analyzeLine.length; i += 2) {
+    var moveNo = (i / 2) + 1;
+    var wSan = analyzeLine[i], bSan = analyzeLine[i + 1];
+    var wVerdict = analyzeReview && analyzeReview[i] ? analyzeReview[i].verdict : null;
+    var bVerdict = (bSan !== undefined && analyzeReview && analyzeReview[i + 1]) ? analyzeReview[i + 1].verdict : null;
+    rows += '<tr>' +
+      '<td class="mv-num">' + moveNo + '</td>' +
+      '<td class="mv-cell' + (analyzePly === i + 1 ? ' current' : '') + '" data-ply="' + (i + 1) + '"><span class="mv-dot' + (wVerdict ? ' ' + wVerdict : '') + '"></span>' + wSan + '</td>' +
+      (bSan !== undefined ? '<td class="mv-cell' + (analyzePly === i + 2 ? ' current' : '') + '" data-ply="' + (i + 2) + '"><span class="mv-dot' + (bVerdict ? ' ' + bVerdict : '') + '"></span>' + bSan + '</td>' : '<td></td>') +
+      '</tr>';
+  }
+  rows += '</tbody></table>';
+  el.innerHTML = rows;
+  el.querySelectorAll('[data-ply]').forEach(function (td) {
+    td.addEventListener('click', function () { analyzeGoTo(parseInt(this.dataset.ply, 10)); });
+  });
+  var current = el.querySelector('.mv-cell.current');
+  if (current && typeof current.scrollIntoView === 'function') current.scrollIntoView({ block: 'nearest' });
+}
+/** Quick material-based eval bar next to the board — not the engine's
+ *  deep evaluation (that would mean a search on every single navigation
+ *  click), just an at-a-glance read of who's up material right now. */
+function updateEvalBar() {
+  var fill = document.getElementById('eval-bar-fill');
+  if (!fill) return;
+  var board = analyzeChess.board();
+  var w = 0, b = 0;
+  for (var r = 0; r < 8; r++) for (var f = 0; f < 8; f++) { var p = board[r][f]; if (p && p.type !== 'k') { if (p.color === 'w') w += PIECE_VAL[p.type]; else b += PIECE_VAL[p.type]; } }
+  var diffPawns = (w - b) / 100;
+  var pct = 50 + Math.max(-46, Math.min(46, diffPawns * 5));
+  fill.style.height = pct + '%';
+}
+function renderBoardHeader() {
+  var el = document.getElementById('analyze-board-header');
+  if (!analyzeLine.length) { el.innerHTML = ''; return; }
+  var wName = analyzeHeaders.White || 'White';
+  var bName = analyzeHeaders.Black || 'Black';
+  var result = analyzeHeaders.Result && analyzeHeaders.Result !== '*' ? analyzeHeaders.Result : '';
+  el.innerHTML = '<span><b>' + wName + '</b></span><span class="vs">vs</span><span><b>' + bName + '</b></span>' + (result ? '<span class="bh-result">' + result + '</span>' : '');
+}
 
 /* ---- navigation: instant, since it only ever reads precomputed data ---- */
 function plyLabel(ply) {
@@ -1972,6 +2253,9 @@ function analyzeGoTo(n) {
   renderAnalyzeReport();
   renderGameSummary();
   renderReviewLog();
+  renderMoveTable();
+  updateEvalBar();
+  renderBoardHeader();
 
   var reviewBtn = document.getElementById('analyze-review-btn');
   var firstBtn = document.querySelector('#panel-analyze [data-act="first"]');
@@ -2066,6 +2350,9 @@ document.addEventListener('DOMContentLoaded', function () {
       renderAnalyzeReport();
       renderReviewLog();
       renderGameSummary();
+      renderMoveTable();
+      updateEvalBar();
+      renderBoardHeader();
       collapseLoadBox('Load a different position');
     } else {
       var ok2 = fresh.load_pgn(raw, { sloppy: true });
